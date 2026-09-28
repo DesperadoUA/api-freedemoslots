@@ -1,0 +1,46 @@
+Live Casino Games — интеграция админки
+========================================
+
+Сущность: live_casino (отдельный post type, как series)
+
+Список записей:
+  postType:           live_casino
+  API list:           POST /api/admin/live-casino
+
+Одна запись:
+  slug:               live_casino
+  API get:            POST /api/admin/live-casino/:idOrPermalink
+  API save:           POST /api/admin/live-casino/update
+  API create:         POST /api/admin/live-casino/store
+  API delete:         POST /api/admin/live-casino/delete
+
+Категории:
+  postType:           live_casino/category
+  API list:           POST /api/admin/live-casino/category
+  API get:            POST /api/admin/live-casino/category/:idOrPermalink
+  API save:           POST /api/admin/live-casino/category/update
+  API create:         POST /api/admin/live-casino/category/store
+  API delete:         POST /api/admin/live-casino/category/delete
+
+Связь со слотом:
+  Поле в форме слота: slot_live_casino_relative
+  Формат как у slot_series_relative, slot_type_relative
+
+Публичный API:
+  GET /api/:lang/live-casino/:permalink?limit=&offset=
+  GET /api/live-casino/:categoryPermalink
+
+Страница-листинг (pages):
+  permalink страницы: live-casino-games
+  поле в ответе: live_casino[]
+
+Поиск админки:
+  db: live_casino | live_casino_category
+
+4 категории (lang=1, parent_id=0):
+  Game Shows      → game-shows
+  Live Baccarat   → live-baccarat
+  Live Roulette   → live-roulette
+  Live Blackjack  → live-blackjack
+
+Сид: node scripts/seeds/seed-live-casino-from-slots-sql.js

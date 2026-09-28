@@ -1,0 +1,375 @@
+================================================================================
+  SERIES (Casino Game Series) — интеграция с админкой
+  API: seo-slots backend (Express), префикс маршрутов: /api
+================================================================================
+
+Базовый URL (dev): http://127.0.0.1:7000/api
+
+Авторизация (защищённые методы):
+  В теле запроса передавать: { id, session, ...остальные поля }
+  id, session — сессия пользователя админки (middleware auth).
+
+Эталон для UI: модуль Feature / Volatility (тот же CRUD + category + relatives).
+
+
+--------------------------------------------------------------------------------
+1. ПУНКТЫ МЕНЮ АДМИНКИ (рекомендуемые)
+--------------------------------------------------------------------------------
+
+  A) Список серий
+     postType для списка:  series (таблица series)
+     API list:           POST /api/admin/series
+
+  B) Редактор серии
+     slug сущности:      series
+     API get:            POST /api/admin/series/:idOrPermalink
+     API save:           POST /api/admin/series/update
+     API create:         POST /api/admin/series/store
+     API delete:         POST /api/admin/series/delete
+
+  C) Категории серий
+     postType:           series/category (таблица series_category)
+     API list:           POST /api/admin/series/category
+     API get:            POST /api/admin/series/category/:idOrPermalink
+     API save:           POST /api/admin/series/category/update
+     API create:         POST /api/admin/series/category/store
+     API delete:         POST /api/admin/series/category/delete
+
+  D) Слот — привязка серий (мультивыбор)
+     Поле в форме слота: slot_series_relative
+     Несколько серий на один слот (M:N).
+     Если не выбрано — при сохранении связи очищаются, в API слота массив [].
+
+  E) Глобальный поиск админки
+     postType:  series          → сущности series
+     postType:  series_category → категории series_category
+
+
+--------------------------------------------------------------------------------
+2. СУЩНОСТЬ SERIES (запись серии)
+--------------------------------------------------------------------------------
+
+Таблицы: series, series_meta
+
+Поля записи (как у feature/volatility):
+  id, status, permalink, title, thumbnail, short_desc,
+  h1, meta_title, description, keywords, content,
+  lang, created_at, updated_at, post_type, slug, parent_id
+
+  post_type = "series"
+  slug      = "series"
+
+Meta (series_meta):
+  rating (integer, default 0)
+
+Статусы status: public | hide | basket
+
+Мультиязычность:
+  При store создаётся запись lang=1 (parent_id=0) + копии на все языки (_LANG)
+  с parent_id = id основной записи.
+
+
+--------------------------------------------------------------------------------
+3. КАТЕГОРИИ SERIES
+--------------------------------------------------------------------------------
+
+Таблица: series_category
+Связь серия ↔ категории: series_category_relative
+
+Поля категории: как у feature_category
+  + faq (JSON-массив в БД, в getPostById приходит распарсенным)
+  post_type = "series/category"
+  slug      = "series"
+
+Публичный список категории:
+  GET /api/series/:permalink
+
+
+--------------------------------------------------------------------------------
+4. СВЯЗЬ СЛОТ ↔ СЕРИИ
+--------------------------------------------------------------------------------
+
+Таблица: slot_series_relative
+  post_id      → slots.id
+  relative_id  → series.id (запись lang=1, parent_id=0 — как у vendor/feature)
+
+В форме слота (POST /api/admin/slot/update, lang=1):
+  Передавать массив slot_series_relative — формат как у других relatives:
+
+    ["Golden Joker {438001}", "Book of Dead {438055}"]
+
+  Парсинг id на бэке: из строки берётся последнее число в фигурных скобках {id}.
+
+В ответе GET слота (PostsKnex):
+  slot_series_relative: [ { id, title, permalink, ... }, ... ]
+  Без привязок: slot_series_relative: []
+
+
+--------------------------------------------------------------------------------
+5. API — СПИСОК СЕРИЙ
+--------------------------------------------------------------------------------
+
+POST /api/admin/series
+Auth: да
+
+Request body:
+{
+  "id": 1,
+  "session": "...",
+  "lang": 1,
+  "limit": 20,
+  "offset": 0
+}
+
+Response:
+{
+  "status": "ok",
+  "body": [ { "id", "title", "permalink", "status", "lang", ... } ],
+  "total": 777,
+  "lang": "en"
+}
+
+
+--------------------------------------------------------------------------------
+6. API — ПОЛУЧИТЬ СЕРИЮ ДЛЯ РЕДАКТОРА
+--------------------------------------------------------------------------------
+
+POST /api/admin/series/:url
+Auth: да
+:url — id (число) или permalink
+
+Request body:
+{
+  "id": 1,
+  "session": "..."
+}
+
+Response:
+{
+  "status": "ok",
+  "body": {
+    "id": 1,
+    "title": "Golden Joker",
+    "permalink": "golden-joker",
+    "status": "hide",
+    "lang": 1,
+    "rating": 0,
+    "content": "",
+    ...
+    "category": {
+      "all_value": [ { "title": "...", "id": 10 } ],
+      "current_value": [ { "title": "...", "id": 10 } ]
+    }
+  }
+}
+
+Примечание: привязка серии к категориям series_category — только блок category
+(all_value / current_value). Отдельного ключа series_category_relative в ответе нет.
+
+
+--------------------------------------------------------------------------------
+7. API — СОЗДАНИЕ / ОБНОВЛЕНИЕ / УДАЛЕНИЕ СЕРИИ
+--------------------------------------------------------------------------------
+
+POST /api/admin/series/store
+Auth: нет (как feature/store)
+
+Request:
+{
+  "data": {
+    "title": "Golden Joker",
+    "lang": "en",
+    "status": "hide",
+    "rating": 0,
+    "content": "",
+    "description": "",
+    ...
+    "category": ["Category name {12}"]
+  }
+}
+
+Response:
+{ "status": "ok", "insert_id": 12345 }
+
+
+POST /api/admin/series/update
+Auth: да
+
+Request:
+{
+  "id": 1,
+  "session": "...",
+  "data": {
+    "id": 12345,
+    "lang": 1,
+    "title": "Golden Joker",
+    "permalink": "golden-joker",
+    "status": "public",
+    "rating": 0,
+    "category": ["My Category {10}"]
+  }
+}
+
+Response:
+{ "status": "ok", "body": {} }
+
+Важно: обновление relatives (category) выполняется только при data.lang === 1.
+
+
+POST /api/admin/series/delete
+Auth: да
+
+Request:
+{
+  "id": 1,
+  "session": "...",
+  "data": 12345
+}
+
+Response:
+{ "status": "ok" }
+
+Удаляет основную запись и все дочерние по parent_id.
+
+
+--------------------------------------------------------------------------------
+8. API — КАТЕГОРИИ СЕРИЙ (аналог feature/category)
+--------------------------------------------------------------------------------
+
+POST /api/admin/series/category          — список (auth)
+POST /api/admin/series/category/:url     — одна категория (auth)
+POST /api/admin/series/category/store    — создать
+POST /api/admin/series/category/update — обновить (auth)
+POST /api/admin/series/category/delete — удалить (auth)
+
+Поля категории в data: title, permalink, status, lang, faq, content, h1, meta_title, ...
+
+
+--------------------------------------------------------------------------------
+9. API — СЛОТ: поле slot_series_relative
+--------------------------------------------------------------------------------
+
+POST /api/admin/slot/:url
+В body приходит блок (пример):
+
+  "slot_series_relative": {
+    "all_value": [
+      { "title": "Golden Joker", "id": 438001 },
+      { "title": "Book of Dead", "id": 438055 }
+    ],
+    "current_value": [
+      { "title": "Golden Joker", "id": 438001 }
+    ]
+  }
+
+POST /api/admin/slot/update (lang = 1 в data):
+
+  "data": {
+    "id": 492846,
+    "lang": 1,
+    ...
+    "slot_series_relative": [
+      "Golden Joker {438001}",
+      "Mega Moolah {438100}"
+    ],
+    "slot_vendor_relative": [ "..." ],
+    "slot_theme_relative": [ "..." ],
+    ...
+  }
+
+Пустой массив slot_series_relative: [] — снять все серии со слота.
+
+
+--------------------------------------------------------------------------------
+10. ПОИСК В АДМИНКЕ
+--------------------------------------------------------------------------------
+
+POST /api/admin/search
+Auth: да
+
+Request:
+{
+  "id": 1,
+  "session": "...",
+  "lang": 1,
+  "postType": "series",
+  "searchWord": "joker"
+}
+
+postType для категорий: "series_category"
+
+Response:
+{
+  "status": "ok",
+  "body": [
+    { "title": "Golden Joker", "permalink": "/admin/series/438001" }
+  ]
+}
+
+
+--------------------------------------------------------------------------------
+11. ПУБЛИЧНЫЙ API (фронт сайта, не админка)
+--------------------------------------------------------------------------------
+
+Страница одной серии + слоты серии:
+  GET /api/:lang/series/:permalink?limit=10&offset=0
+
+  Response body:
+  {
+    "status": "ok",
+    "body": {
+      "title", "permalink", "content", "h1", ...
+      "posts": [ /* карточки слотов */ ],
+      "total": 42
+    }
+  }
+
+Категория серий (публично):
+  GET /api/series/:permalink
+
+Листинг всех серий на статической странице:
+  Страница pages с permalink = "slot-series"
+  (данные подставляет pages/service — поле page.series)
+
+
+--------------------------------------------------------------------------------
+12. КЛЮЧИ ДЛЯ КОПИРОВАНИЯ UI С FEATURE/VOLATILITY
+--------------------------------------------------------------------------------
+
+  | Действие              | Feature              | Series (новое)        |
+  |-----------------------|----------------------|------------------------|
+  | Список                | /admin/features      | /admin/series          |
+  | Редактор              | /admin/feature/:id   | /admin/series/:id      |
+  | Категории список      | /admin/feature/category | /admin/series/category |
+  | Search postType       | features             | series                 |
+  | Search category       | feature_category     | series_category        |
+  | Relative у слота      | slot_feature_relative | slot_series_relative  |
+  | Публичный URL         | /:lang/feature/:url  | /:lang/series/:url     |
+
+Компонент мультиселекта relatives у слота: скопировать с slot_feature_relative,
+заменить ключ на slot_series_relative, источник all_value — серии текущего lang.
+
+
+--------------------------------------------------------------------------------
+13. ЯЗЫКИ (lang)
+--------------------------------------------------------------------------------
+
+  1=en, 2=ua, 3=de, 4=es, 5=fr, 6=ru, 7=ch, 8=pt, 9=it, 10=tr,
+  11=nl, 12=pl, 13=ro, 14=el, 15=cs, 16=sv, 17=fi, 18=hu, 19=sr, 20=hi
+
+В админке lang в запросах — числовой id (1, 2, ...).
+
+
+--------------------------------------------------------------------------------
+14. ИМПОРТ ИЗ slots.sql (уже выполнен на бэке)
+--------------------------------------------------------------------------------
+
+Скрипт: node scripts/seeds/seed-series-from-slots-sql.js
+
+  777 уникальных серий, связи slot_series_relative по permalink slotcatalog.
+Повторный запуск идемпотентен.
+
+
+================================================================================
+Конец файла
+================================================================================
